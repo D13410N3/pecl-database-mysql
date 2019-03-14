@@ -1,8 +1,8 @@
-# MySQL database access functions
+# MySQL database access functions without annoying warnings from original repo
 
 ## Warning
 
-This extension is deprecated and unmaintained.
+This extension is deprecated and unmaintained blah blah blah
 
 ## Description
 
