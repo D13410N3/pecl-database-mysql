@@ -667,7 +667,7 @@ PHP_RSHUTDOWN_FUNCTION(mysql)
 
 	if (MySG(trace_mode)) {
 		if (MySG(result_allocated)){
-			php_error_docref("function.mysql-free-result", E_WARNING, "%pu result set(s) not freed. Use mysql_free_result to free result sets which were requested using mysql_query()", MySG(result_allocated));
+			php_error_docref("function.mysql-free-result", E_WARNING, ZEND_LONG_FMT " result set(s) not freed. Use mysql_free_result to free result sets which were requested using mysql_query()", MySG(result_allocated));
 		}
 	}
 
@@ -871,13 +871,13 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 #endif
 
 			if (MySG(max_links) != -1 && MySG(num_links) >= MySG(max_links)) {
-				php_error_docref(NULL, E_WARNING, "Too many open links (%pd)", MySG(num_links));
+				php_error_docref(NULL, E_WARNING, "Too many open links (" ZEND_LONG_FMT ")", MySG(num_links));
 				zend_string_release(hashed_details);
 				MYSQL_DO_CONNECT_RETURN_FALSE();
 			}
 
 			if (MySG(max_persistent) != -1 && MySG(num_persistent) >= MySG(max_persistent)) {
-				php_error_docref(NULL, E_WARNING, "Too many open persistent links (%pd)", MySG(num_persistent));
+				php_error_docref(NULL, E_WARNING, "Too many open persistent links (" ZEND_LONG_FMT ")", MySG(num_persistent));
 				zend_string_release(hashed_details);
 				MYSQL_DO_CONNECT_RETURN_FALSE();
 			}
@@ -896,6 +896,8 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 
 #ifndef MYSQL_USE_MYSQLND
 			mysql->conn = mysql_init(NULL);
+#elif PHP_VERSION_ID >= 80100
+			mysql->conn = mysqlnd_init(MYSQLND_CLIENT_NO_FLAG, persistent);
 #else
 			mysql->conn = mysqlnd_init(MYSQLND_CLIENT_KNOWS_RSET_COPY_DATA, persistent);
 #endif
@@ -905,6 +907,8 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 			}
 #ifndef MYSQL_USE_MYSQLND
 			if (mysql_real_connect(mysql->conn, host, user, passwd, NULL, port, socket, client_flags)==NULL)
+#elif PHP_VERSION_ID >= 80100
+			if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_NO_FLAG) == NULL)
 #else
 			if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_KNOWS_RSET_COPY_DATA) == NULL)
 #endif
@@ -964,6 +968,8 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 				if (mysql_errno(mysql->conn) == 2006) {
 #ifndef MYSQL_USE_MYSQLND
 					if (mysql_real_connect(mysql->conn, host, user, passwd, NULL, port, socket, client_flags)==NULL)
+#elif PHP_VERSION_ID >= 80100
+					if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_NO_FLAG) == NULL)
 #else
 					if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_KNOWS_RSET_COPY_DATA) == NULL)
 #endif
@@ -1012,7 +1018,7 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 		}
 
 		if (MySG(max_links) != -1 && MySG(num_links) >= MySG(max_links)) {
-			php_error_docref(NULL, E_WARNING, "Too many open links (%pd)", MySG(num_links));
+			php_error_docref(NULL, E_WARNING, "Too many open links (" ZEND_LONG_FMT ")", MySG(num_links));
 			zend_string_release(hashed_details);
 			MYSQL_DO_CONNECT_RETURN_FALSE();
 		}
@@ -1025,6 +1031,8 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 
 #ifndef MYSQL_USE_MYSQLND
 		mysql->conn = mysql_init(NULL);
+#elif PHP_VERSION_ID >= 80100
+		mysql->conn = mysqlnd_init(MYSQLND_CLIENT_NO_FLAG, persistent);
 #else
 		mysql->conn = mysqlnd_init(MYSQLND_CLIENT_KNOWS_RSET_COPY_DATA, persistent);
 #endif
@@ -1042,6 +1050,8 @@ static void php_mysql_do_connect(INTERNAL_FUNCTION_PARAMETERS, int persistent)
 
 #ifndef MYSQL_USE_MYSQLND
 		if (mysql_real_connect(mysql->conn, host, user, passwd, NULL, port, socket, client_flags)==NULL)
+#elif PHP_VERSION_ID >= 80100
+		if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_NO_FLAG) == NULL)
 #else
 		if (mysqlnd_connect(mysql->conn, host, user, passwd, passwd_len, NULL, 0, port, socket, client_flags, MYSQLND_CLIENT_KNOWS_RSET_COPY_DATA) == NULL)
 #endif
@@ -2021,7 +2031,7 @@ Q: String or long first?
 	}
 
 	if (row < 0 || row >= (int)mysql_num_rows(mysql_result)) {
-		php_error_docref(NULL, E_WARNING, "Unable to jump to row %pd on MySQL result index %d", row, Z_RES_P(result)->handle);
+		php_error_docref(NULL, E_WARNING, "Unable to jump to row " ZEND_LONG_FMT " on MySQL result index %d", row, Z_RES_P(result)->handle);
 		RETURN_FALSE;
 	}
 	mysql_data_seek(mysql_result, row);
@@ -2083,6 +2093,17 @@ Q: String or long first?
 	}
 	if (sql_row[field_offset]) {
 		RETVAL_STRINGL(sql_row[field_offset], sql_row_lengths[field_offset]);
+	} else {
+		RETURN_NULL();
+	}
+#elif PHP_VERSION_ID >= 80100
+	zval *row_zvals;
+	zend_bool fetched_anything;
+	if (mysqlnd_fetch_row_zval(mysql_result, &row_zvals, &fetched_anything) == PASS && fetched_anything) {
+		RETVAL_COPY(&row_zvals[field_offset]);
+		for (unsigned i = 0, n = mysql_num_fields(mysql_result); i < n; i++) {
+			zval_ptr_dtor_nogc(&row_zvals[i]);
+		}
 	} else {
 		RETURN_NULL();
 	}
@@ -2236,6 +2257,12 @@ static void php_mysql_fetch_hash(INTERNAL_FUNCTION_PARAMETERS, zend_long result_
 			}
 		}
 	}
+#elif PHP_VERSION_ID >= 80100
+	mysqlnd_fetch_into(mysql_result, ((result_type & MYSQL_NUM)? MYSQLND_FETCH_NUM:0) | ((result_type & MYSQL_ASSOC)? MYSQLND_FETCH_ASSOC:0), return_value);
+	/* mysqlnd distinguishes error and no more result. ext/mysql uses false for both. */
+	if (Z_TYPE_P(return_value) == IS_NULL) {
+		ZVAL_FALSE(return_value);
+	}
 #else
 	mysqlnd_fetch_into(mysql_result, ((result_type & MYSQL_NUM)? MYSQLND_FETCH_NUM:0) | ((result_type & MYSQL_ASSOC)? MYSQLND_FETCH_ASSOC:0), return_value, MYSQLND_MYSQL);
 #endif
@@ -2269,7 +2296,11 @@ static void php_mysql_fetch_hash(INTERNAL_FUNCTION_PARAMETERS, zend_long result_
 			fci.retval = &retval;
 			fci.params = NULL;
 			fci.param_count = 0;
+#if PHP_VERSION_ID < 80000
 			fci.no_separation = 1;
+#else
+			fci.named_params = NULL;
+#endif
 
 			if (ctor_params && Z_TYPE_P(ctor_params) != IS_NULL) {
 				if (zend_fcall_info_args(&fci, ctor_params) == FAILURE) {
@@ -2367,7 +2398,7 @@ PHP_FUNCTION(mysql_data_seek)
 	}
 
 	if (offset < 0 || offset >= (int)mysql_num_rows(mysql_result)) {
-		php_error_docref(NULL, E_WARNING, "Offset %pd is invalid for MySQL result index %d (or the query data is unbuffered)", offset, Z_RES_P(result)->handle);
+		php_error_docref(NULL, E_WARNING, "Offset " ZEND_LONG_FMT " is invalid for MySQL result index %d (or the query data is unbuffered)", offset, Z_RES_P(result)->handle);
 		RETURN_FALSE;
 	}
 	mysql_data_seek(mysql_result, offset);
@@ -2381,7 +2412,7 @@ PHP_FUNCTION(mysql_fetch_lengths)
 {
 	zval *result;
 	MYSQL_RES *mysql_result;
-	mysql_row_length_type *lengths;
+	const mysql_row_length_type *lengths;
 	int num_fields;
 	int i;
 
@@ -2517,7 +2548,11 @@ PHP_FUNCTION(mysql_fetch_field)
 #endif
 	add_property_stringl(return_value, "table", (mysql_field->table?mysql_field->table:""), mysql_field->table_length);
 	add_property_stringl(return_value, "def", (mysql_field->def?mysql_field->def:""), mysql_field->def_length);
+#if PHP_VERSION_ID >= 80100
+	add_property_long(return_value, "max_length", 0);
+#else
 	add_property_long(return_value, "max_length", mysql_field->max_length);
+#endif
 	add_property_long(return_value, "not_null", IS_NOT_NULL(mysql_field->flags)?1:0);
 	add_property_long(return_value, "primary_key", IS_PRI_KEY(mysql_field->flags)?1:0);
 	add_property_long(return_value, "multiple_key", (mysql_field->flags&MULTIPLE_KEY_FLAG?1:0));
@@ -2547,7 +2582,7 @@ PHP_FUNCTION(mysql_field_seek)
 	}
 
 	if (offset < 0 || offset >= (int)mysql_num_fields(mysql_result)) {
-		php_error_docref(NULL, E_WARNING, "Field %pd is invalid for MySQL result index %d", offset, Z_RES_P(result)->handle);
+		php_error_docref(NULL, E_WARNING, "Field " ZEND_LONG_FMT " is invalid for MySQL result index %d", offset, Z_RES_P(result)->handle);
 		RETURN_FALSE;
 	}
 	mysql_field_seek(mysql_result, offset);
@@ -2581,7 +2616,7 @@ static void php_mysql_field_info(INTERNAL_FUNCTION_PARAMETERS, int entry_type)
 	}
 
 	if (field < 0 || field >= (int)mysql_num_fields(mysql_result)) {
-		php_error_docref(NULL, E_WARNING, "Field %pd is invalid for MySQL result index %d", field, Z_RES_P(result)->handle);
+		php_error_docref(NULL, E_WARNING, "Field " ZEND_LONG_FMT " is invalid for MySQL result index %d", field, Z_RES_P(result)->handle);
 		RETURN_FALSE;
 	}
 	mysql_field_seek(mysql_result, field);
